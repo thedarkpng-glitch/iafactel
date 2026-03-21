@@ -1,57 +1,20 @@
 import { useState, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
-import { Send, Copy, Check, Plus, ThumbsUp, ThumbsDown, Settings, X, User } from "lucide-react";
+import { Send, Copy, Check, Plus, ThumbsUp, ThumbsDown, Settings, Shield, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 import { streamChat, type Msg } from "@/lib/chat-stream";
+import SettingsPanel, { applyTheme } from "@/components/SettingsPanel";
+import AdminPanel from "@/components/AdminPanel";
 import factelAvatar from "@/assets/factel-avatar.png";
-
-const THEME_PRESETS = [
-  { name: "Cyber", bg: "240 10% 6%", card: "240 8% 10%", muted: "240 6% 16%", primary: "165 80% 50%", border: "240 6% 18%" },
-  { name: "Midnight", bg: "222 47% 6%", card: "222 47% 9%", muted: "222 30% 15%", primary: "210 100% 60%", border: "222 30% 15%" },
-  { name: "Roxo", bg: "270 20% 6%", card: "270 15% 10%", muted: "270 10% 16%", primary: "270 80% 65%", border: "270 10% 18%" },
-  { name: "Verde", bg: "150 15% 5%", card: "150 10% 9%", muted: "150 8% 15%", primary: "140 70% 45%", border: "150 8% 17%" },
-  { name: "Vermelho", bg: "0 15% 6%", card: "0 10% 10%", muted: "0 8% 16%", primary: "0 75% 55%", border: "0 8% 18%" },
-  { name: "Laranja", bg: "25 15% 6%", card: "25 10% 10%", muted: "25 8% 16%", primary: "25 90% 55%", border: "25 8% 18%" },
-];
-
-type UserPrefs = { username: string; themeIndex: number };
-
-function loadPrefs(): UserPrefs {
-  try {
-    const raw = localStorage.getItem("factel-prefs");
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  return { username: "", themeIndex: 0 };
-}
-
-function savePrefs(p: UserPrefs) {
-  localStorage.setItem("factel-prefs", JSON.stringify(p));
-}
-
-function applyTheme(idx: number) {
-  const t = THEME_PRESETS[idx] || THEME_PRESETS[0];
-  const r = document.documentElement.style;
-  r.setProperty("--background", t.bg);
-  r.setProperty("--card", t.card);
-  r.setProperty("--card-foreground", "220 15% 90%");
-  r.setProperty("--muted", t.muted);
-  r.setProperty("--primary", t.primary);
-  r.setProperty("--border", t.border);
-  r.setProperty("--input", t.border);
-  r.setProperty("--ring", t.primary);
-}
 
 const CopyBtn = ({ text }: { text: string }) => {
   const [ok, setOk] = useState(false);
   return (
-    <button
-      onClick={() => { navigator.clipboard.writeText(text); setOk(true); setTimeout(() => setOk(false), 1500); }}
-      className="p-1 rounded hover:bg-[hsl(var(--muted))] text-muted-foreground hover:text-foreground transition-colors"
-    >
+    <button onClick={() => { navigator.clipboard.writeText(text); setOk(true); setTimeout(() => setOk(false), 1500); }} className="p-1 rounded hover:bg-[hsl(var(--muted))] text-muted-foreground hover:text-foreground transition-colors">
       {ok ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
     </button>
   );
@@ -75,68 +38,35 @@ const MsgActions = ({ content }: { content: string }) => (
   </div>
 );
 
-const SettingsPanel = ({ prefs, onSave, onClose }: { prefs: UserPrefs; onSave: (p: UserPrefs) => void; onClose: () => void }) => {
-  const [username, setUsername] = useState(prefs.username);
-  const [themeIdx, setThemeIdx] = useState(prefs.themeIndex);
-
-  useEffect(() => { applyTheme(themeIdx); }, [themeIdx]);
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-card border border-border rounded-xl w-full max-w-sm p-5 space-y-5" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Personalização</h2>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
-        </div>
-
-        <div className="space-y-2">
-          <Label className="text-xs text-muted-foreground">Seu nome</Label>
-          <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Como quer ser chamado?" className="h-9 text-sm" />
-        </div>
-
-        <div className="space-y-2">
-          <Label className="text-xs text-muted-foreground">Tema</Label>
-          <div className="grid grid-cols-3 gap-2">
-            {THEME_PRESETS.map((t, i) => (
-              <button
-                key={t.name}
-                onClick={() => setThemeIdx(i)}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs transition-all ${
-                  i === themeIdx ? "border-primary bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:border-primary/30"
-                }`}
-              >
-                <span className="h-3 w-3 rounded-full shrink-0" style={{ background: `hsl(${t.primary})` }} />
-                {t.name}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <Button
-          className="w-full h-9 text-sm"
-          onClick={() => { onSave({ username, themeIndex: themeIdx }); onClose(); }}
-        >
-          Salvar
-        </Button>
-      </div>
-    </div>
-  );
-};
-
 const Index = () => {
-  const [prefs, setPrefs] = useState<UserPrefs>(loadPrefs);
-  const [showSettings, setShowSettings] = useState(false);
+  const { user, signOut } = useAuth();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showAdmin, setShowAdmin] = useState(false);
+  const [profile, setProfile] = useState<{ username: string | null; avatar_url: string | null }>({ username: null, avatar_url: null });
+  const [botSettings, setBotSettings] = useState<{ bot_name: string; bot_avatar_url: string | null }>({ bot_name: "IA Factel", bot_avatar_url: null });
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const { toast } = useToast();
 
-  useEffect(() => { applyTheme(prefs.themeIndex); }, []);
+  const loadProfile = async () => {
+    if (!user) return;
+    const { data } = await supabase.from("profiles").select("*").eq("user_id", user.id).single();
+    if (data) {
+      setProfile({ username: data.username, avatar_url: data.avatar_url });
+      applyTheme(data.theme_index || 0, data.custom_bg_color, data.custom_primary_color);
+    }
+  };
 
+  const loadBotSettings = async () => {
+    const { data } = await supabase.from("bot_settings").select("*").limit(1).single();
+    if (data) setBotSettings({ bot_name: data.bot_name, bot_avatar_url: data.bot_avatar_url });
+  };
+
+  useEffect(() => { loadProfile(); loadBotSettings(); }, [user]);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
-
   useEffect(() => {
     if (inputRef.current) {
       inputRef.current.style.height = "auto";
@@ -144,11 +74,7 @@ const Index = () => {
     }
   }, [input]);
 
-  const handleSavePrefs = (p: UserPrefs) => {
-    setPrefs(p);
-    savePrefs(p);
-    applyTheme(p.themeIndex);
-  };
+  const botAvatar = botSettings.bot_avatar_url || factelAvatar;
 
   const send = async () => {
     const t = input.trim();
@@ -185,19 +111,25 @@ const Index = () => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
   };
 
-  const initials = prefs.username ? prefs.username.slice(0, 2).toUpperCase() : "";
+  const initials = profile.username ? profile.username.slice(0, 2).toUpperCase() : user?.email?.slice(0, 2).toUpperCase() || "?";
 
   return (
     <div className="flex flex-col h-screen">
       {/* Header */}
       <div className="flex items-center justify-between px-4 h-11 border-b border-border shrink-0">
-        <span className="text-sm font-semibold">IA Factel</span>
+        <span className="text-sm font-semibold">{botSettings.bot_name}</span>
         <div className="flex items-center gap-1">
           <Button variant="ghost" size="sm" onClick={() => setMessages([])} className="text-xs text-muted-foreground gap-1 h-7">
             <Plus className="h-3 w-3" /> Novo
           </Button>
-          <Button variant="ghost" size="icon" onClick={() => setShowSettings(true)} className="h-7 w-7 text-muted-foreground">
+          <Button variant="ghost" size="icon" onClick={() => setShowSettings(true)} className="h-7 w-7 text-muted-foreground" title="Personalizar">
             <Settings className="h-3.5 w-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon" onClick={() => setShowAdmin(true)} className="h-7 w-7 text-muted-foreground" title="Admin">
+            <Shield className="h-3.5 w-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon" onClick={signOut} className="h-7 w-7 text-muted-foreground" title="Sair">
+            <LogOut className="h-3.5 w-3.5" />
           </Button>
         </div>
       </div>
@@ -207,20 +139,13 @@ const Index = () => {
         <div className="max-w-2xl mx-auto px-4">
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-[calc(100vh-120px)] gap-2">
-              <Avatar className="h-10 w-10 mb-1">
-                <AvatarImage src={factelAvatar} />
-                <AvatarFallback className="bg-primary/10 text-primary font-semibold text-sm">F</AvatarFallback>
-              </Avatar>
+              <img src={botAvatar} alt="Bot" className="h-10 w-10 rounded-full object-cover" />
               <p className="text-base font-medium">
-                {prefs.username ? `E aí, ${prefs.username}! No que posso ajudar?` : "No que posso ajudar?"}
+                {profile.username ? `E aí, ${profile.username}!` : "No que posso ajudar?"}
               </p>
               <div className="flex gap-2 flex-wrap justify-center mt-3">
                 {["Faz um script em Python", "Explica isso pra mim", "Me dá uma ideia de projeto"].map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => { setInput(s); inputRef.current?.focus(); }}
-                    className="px-3 py-1.5 rounded-full border border-border text-xs text-muted-foreground hover:text-foreground hover:border-primary/30 transition-colors"
-                  >
+                  <button key={s} onClick={() => { setInput(s); inputRef.current?.focus(); }} className="px-3 py-1.5 rounded-full border border-border text-xs text-muted-foreground hover:text-foreground hover:border-primary/30 transition-colors">
                     {s}
                   </button>
                 ))}
@@ -231,18 +156,17 @@ const Index = () => {
               {messages.map((msg, i) => (
                 <div key={i} className={`group ${msg.role === "user" ? "flex justify-end" : "flex gap-2.5"}`}>
                   {msg.role === "assistant" && (
-                    <Avatar className="h-6 w-6 mt-1 shrink-0">
-                      <AvatarImage src={factelAvatar} />
-                      <AvatarFallback className="bg-primary/10 text-primary text-[10px] font-semibold">F</AvatarFallback>
-                    </Avatar>
+                    <img src={botAvatar} alt="Bot" className="h-6 w-6 mt-1 shrink-0 rounded-full object-cover" />
                   )}
                   {msg.role === "user" ? (
                     <div className="flex items-start gap-2 flex-row-reverse">
-                      {initials && (
-                        <div className="h-6 w-6 mt-1 shrink-0 rounded-full bg-primary/20 flex items-center justify-center">
+                      <div className="h-6 w-6 mt-1 shrink-0 rounded-full overflow-hidden bg-primary/20 flex items-center justify-center">
+                        {profile.avatar_url ? (
+                          <img src={profile.avatar_url} alt="" className="h-full w-full object-cover" />
+                        ) : (
                           <span className="text-[10px] font-semibold text-primary">{initials}</span>
-                        </div>
-                      )}
+                        )}
+                      </div>
                       <div className="bg-muted rounded-2xl rounded-br-sm px-3.5 py-2 max-w-[75%] text-sm whitespace-pre-wrap">
                         {msg.content}
                       </div>
@@ -295,7 +219,8 @@ const Index = () => {
         </div>
       </div>
 
-      {showSettings && <SettingsPanel prefs={prefs} onSave={handleSavePrefs} onClose={() => setShowSettings(false)} />}
+      <SettingsPanel open={showSettings} onClose={() => { setShowSettings(false); loadProfile(); }} />
+      <AdminPanel open={showAdmin} onClose={() => setShowAdmin(false)} onBotUpdated={loadBotSettings} />
     </div>
   );
 };
