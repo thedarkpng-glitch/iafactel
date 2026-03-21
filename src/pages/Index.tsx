@@ -186,7 +186,7 @@ const Index = () => {
                         >
                           {msg.content}
                         </ReactMarkdown>
-                        {isLoading && i === messages.length - 1 && (
+                        {isLoading && i === messages.length - 1 && msg.content && (
                           <span className="inline-block w-1.5 h-4 bg-primary/60 animate-pulse rounded-sm ml-0.5 align-middle" />
                         )}
                       </div>
@@ -195,6 +195,20 @@ const Index = () => {
                   )}
                 </div>
               ))}
+              {/* Typing indicator — shows before first token arrives */}
+              {isLoading && (messages.length === 0 || messages[messages.length - 1]?.role === "user") && (
+                <div className="flex gap-2.5">
+                  <img src={botAvatar} alt="Bot" className="h-6 w-6 mt-1 shrink-0 rounded-full object-cover" />
+                  <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                    <span>Digitando</span>
+                    <span className="typing-dots">
+                      <span className="dot">.</span>
+                      <span className="dot">.</span>
+                      <span className="dot">.</span>
+                    </span>
+                  </div>
+                </div>
+              )}
               <div ref={bottomRef} />
             </div>
           )}
