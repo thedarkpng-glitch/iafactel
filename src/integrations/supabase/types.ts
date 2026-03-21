@@ -14,7 +14,66 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      bot_settings: {
+        Row: {
+          bot_avatar_url: string | null
+          bot_name: string
+          created_at: string
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          bot_avatar_url?: string | null
+          bot_name?: string
+          created_at?: string
+          id?: string
+          updated_at?: string
+        }
+        Update: {
+          bot_avatar_url?: string | null
+          bot_name?: string
+          created_at?: string
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          custom_bg_color: string | null
+          custom_primary_color: string | null
+          id: string
+          theme_index: number | null
+          updated_at: string
+          user_id: string
+          username: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          custom_bg_color?: string | null
+          custom_primary_color?: string | null
+          id?: string
+          theme_index?: number | null
+          updated_at?: string
+          user_id: string
+          username?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          custom_bg_color?: string | null
+          custom_primary_color?: string | null
+          id?: string
+          theme_index?: number | null
+          updated_at?: string
+          user_id?: string
+          username?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
