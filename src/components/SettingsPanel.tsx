@@ -18,13 +18,22 @@ const THEME_PRESETS = [
   { name: "Azul", bg: "210 20% 6%", primary: "200 80% 55%" },
 ];
 
+// Username validation: no spaces, no special badges, 3-20 chars, alphanumeric + underscore
+function validateUsername(val: string): string | null {
+  if (val.length < 3) return "Mínimo 3 caracteres";
+  if (val.length > 20) return "Máximo 20 caracteres";
+  if (/\s/.test(val)) return "Sem espaços!";
+  if (!/^[a-zA-Z0-9_]+$/.test(val)) return "Só letras, números e _";
+  const banned = ["admin", "moderador", "criador", "creator", "mod", "staff", "owner", "dono", "fundador"];
+  if (banned.some(b => val.toLowerCase().includes(b))) return "Nome reservado";
+  return null;
+}
+
 export function applyTheme(idx: number, customBg?: string | null, customPrimary?: string | null) {
   const t = THEME_PRESETS[idx] || THEME_PRESETS[0];
   const r = document.documentElement.style;
   const bg = customBg || t.bg;
   const primary = customPrimary || t.primary;
-  
-  // Parse bg hue for derived colors
   const hue = bg.split(" ")[0];
   r.setProperty("--background", bg);
   r.setProperty("--card", `${hue} 8% 10%`);
@@ -44,6 +53,7 @@ const SettingsPanel = ({ open, onClose }: Props) => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [username, setUsername] = useState("");
+  const [usernameError, setUsernameError] = useState<string | null>(null);
   const [themeIdx, setThemeIdx] = useState(0);
   const [customBg, setCustomBg] = useState("");
   const [customPrimary, setCustomPrimary] = useState("");
@@ -68,16 +78,20 @@ const SettingsPanel = ({ open, onClose }: Props) => {
     if (open) applyTheme(themeIdx, customBg || null, customPrimary || null);
   }, [themeIdx, customBg, customPrimary, open]);
 
+  const handleUsernameChange = (val: string) => {
+    const clean = val.replace(/\s/g, ""); // strip spaces immediately
+    setUsername(clean);
+    setUsernameError(clean ? validateUsername(clean) : null);
+  };
+
   const uploadAvatar = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.[0] || !user) return;
     setUploading(true);
     const file = e.target.files[0];
     const ext = file.name.split(".").pop();
     const path = `${user.id}/avatar.${ext}`;
-
     const { error } = await supabase.storage.from("avatars").upload(path, file, { upsert: true });
     if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); setUploading(false); return; }
-
     const { data: { publicUrl } } = supabase.storage.from("avatars").getPublicUrl(path);
     setAvatarUrl(publicUrl + "?t=" + Date.now());
     setUploading(false);
@@ -85,6 +99,10 @@ const SettingsPanel = ({ open, onClose }: Props) => {
 
   const save = async () => {
     if (!user) return;
+    if (username) {
+      const err = validateUsername(username);
+      if (err) { setUsernameError(err); toast({ title: err, variant: "destructive" }); return; }
+    }
     const { error } = await supabase.from("profiles").update({
       username,
       theme_index: themeIdx,
@@ -92,7 +110,6 @@ const SettingsPanel = ({ open, onClose }: Props) => {
       custom_primary_color: customPrimary || null,
       avatar_url: avatarUrl,
     }).eq("user_id", user.id);
-
     if (error) toast({ title: "Erro", description: error.message, variant: "destructive" });
     else { toast({ title: "Salvo!" }); onClose(); }
   };
@@ -124,7 +141,13 @@ const SettingsPanel = ({ open, onClose }: Props) => {
           </div>
           <div className="flex-1">
             <Label className="text-xs text-muted-foreground">Seu nome</Label>
-            <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Username" className="h-8 text-sm" />
+            <Input
+              value={username}
+              onChange={(e) => handleUsernameChange(e.target.value)}
+              placeholder="username"
+              className={`h-8 text-sm ${usernameError ? "border-destructive" : ""}`}
+            />
+            {usernameError && <p className="text-[10px] text-destructive mt-0.5">{usernameError}</p>}
           </div>
         </div>
 
@@ -192,7 +215,6 @@ const SettingsPanel = ({ open, onClose }: Props) => {
   );
 };
 
-// HSL string "H S% L%" to hex
 function hslToHex(hslStr: string): string {
   const parts = hslStr.replace(/%/g, "").split(" ").map(Number);
   if (parts.length < 3) return "#000000";
@@ -206,7 +228,6 @@ function hslToHex(hslStr: string): string {
   return `#${f(0)}${f(8)}${f(4)}`;
 }
 
-// Hex to HSL string
 function hexToHsl(hex: string): string {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
   const g = parseInt(hex.slice(3, 5), 16) / 255;

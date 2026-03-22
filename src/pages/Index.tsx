@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
-import { Send, Copy, Check, Plus, ThumbsUp, ThumbsDown, Settings, Shield, LogOut, Menu } from "lucide-react";
+import { Send, Copy, Check, Plus, ThumbsUp, ThumbsDown, Settings, Shield, LogOut, Menu, Mic, MicOff, Paperclip, Image } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
@@ -10,6 +10,17 @@ import SettingsPanel, { applyTheme } from "@/components/SettingsPanel";
 import AdminPanel from "@/components/AdminPanel";
 import ChatSidebar from "@/components/ChatSidebar";
 import factelAvatar from "@/assets/factel-avatar.png";
+
+const SUGGESTIONS = [
+  "Faz um script em Python",
+  "Explica isso pra mim",
+  "Me dá uma ideia de projeto",
+  "Cria uma landing page",
+  "Faz uma função JavaScript",
+  "Explica como funciona API",
+  "Me ajuda com CSS",
+  "Escreve um texto criativo",
+];
 
 const CopyBtn = ({ text }: { text: string }) => {
   const [ok, setOk] = useState(false);
@@ -38,6 +49,12 @@ const MsgActions = ({ content }: { content: string }) => (
   </div>
 );
 
+// Rotating suggestions
+function getRandomSuggestions(n: number) {
+  const shuffled = [...SUGGESTIONS].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, n);
+}
+
 const Index = () => {
   const { user, signOut } = useAuth();
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -49,8 +66,12 @@ const Index = () => {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [profile, setProfile] = useState<{ username: string | null; avatar_url: string | null }>({ username: null, avatar_url: null });
   const [botSettings, setBotSettings] = useState<{ bot_name: string; bot_avatar_url: string | null }>({ bot_name: "IA Factel", bot_avatar_url: null });
+  const [isListening, setIsListening] = useState(false);
+  const [suggestions] = useState(() => getRandomSuggestions(4));
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const recognitionRef = useRef<any>(null);
   const { toast } = useToast();
 
   const loadProfile = async () => {
@@ -91,6 +112,69 @@ const Index = () => {
     }
   }, [input]);
 
+  // Speech-to-text
+  const toggleListening = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      toast({ title: "Navegador não suporta reconhecimento de voz", variant: "destructive" });
+      return;
+    }
+
+    if (isListening && recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = "pt-BR";
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognitionRef.current = recognition;
+
+    recognition.onresult = (event: any) => {
+      let transcript = "";
+      for (let i = 0; i < event.results.length; i++) {
+        transcript += event.results[i][0].transcript;
+      }
+      setInput(transcript);
+    };
+
+    recognition.onerror = () => { setIsListening(false); };
+    recognition.onend = () => { setIsListening(false); };
+
+    recognition.start();
+    setIsListening(true);
+  };
+
+  // File upload handler
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const isImage = file.type.startsWith("image/");
+    
+    if (isImage) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64 = reader.result as string;
+        const msg = `[Imagem enviada: ${file.name}]\n\n![imagem](${base64})`;
+        setInput(msg);
+      };
+      reader.readAsDataURL(file);
+    } else {
+      // For text/code files, read as text
+      if (file.size > 5 * 1024 * 1024) {
+        toast({ title: "Arquivo muito grande", description: "Máximo 5MB", variant: "destructive" });
+        return;
+      }
+      const text = await file.text();
+      const truncated = text.slice(0, 8000);
+      setInput(`Analise este arquivo "${file.name}":\n\n\`\`\`\n${truncated}\n\`\`\``);
+    }
+    e.target.value = "";
+  };
+
   const botAvatar = botSettings.bot_avatar_url || factelAvatar;
 
   const saveMessage = async (convId: string, role: string, content: string) => {
@@ -100,12 +184,17 @@ const Index = () => {
   const send = async () => {
     const t = input.trim();
     if (!t || isLoading || !user) return;
+    
+    if (isListening && recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    }
+
     const userMsg: Msg = { role: "user", content: t };
     setMessages((p) => [...p, userMsg]);
     setInput("");
     setIsLoading(true);
 
-    // Create conversation if new
     let convId = conversationId;
     if (!convId) {
       const title = t.length > 40 ? t.slice(0, 40) + "..." : t;
@@ -114,7 +203,6 @@ const Index = () => {
       else { setIsLoading(false); return; }
     }
 
-    // Save user message
     await saveMessage(convId, "user", t);
 
     let buf = "";
@@ -135,7 +223,6 @@ const Index = () => {
           setIsLoading(false);
           if (buf && convId) {
             await saveMessage(convId, "assistant", buf);
-            // Update conversation timestamp
             await supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", convId);
           }
         },
@@ -197,9 +284,9 @@ const Index = () => {
                 <p className="text-base font-medium">
                   {profile.username ? `E aí, ${profile.username}!` : "No que posso ajudar?"}
                 </p>
-                <div className="flex gap-2 flex-wrap justify-center mt-3">
-                  {["Faz um script em Python", "Explica isso pra mim", "Me dá uma ideia de projeto"].map((s) => (
-                    <button key={s} onClick={() => { setInput(s); inputRef.current?.focus(); }} className="px-3 py-1.5 rounded-full border border-border text-xs text-muted-foreground hover:text-foreground hover:border-primary/30 transition-colors">
+                <div className="grid grid-cols-2 gap-2 mt-4 w-full max-w-md">
+                  {suggestions.map((s) => (
+                    <button key={s} onClick={() => { setInput(s); inputRef.current?.focus(); }} className="px-3 py-2.5 rounded-xl border border-border text-xs text-muted-foreground hover:text-foreground hover:border-primary/30 transition-colors text-left">
                       {s}
                     </button>
                   ))}
@@ -236,6 +323,9 @@ const Index = () => {
                                 return <code className="px-1 py-0.5 rounded bg-muted text-[13px]" {...props}>{children}</code>;
                               },
                               pre: ({ children }) => <>{children}</>,
+                              img: ({ src, alt }) => (
+                                <img src={src} alt={alt || ""} className="max-w-full rounded-lg my-2" />
+                              ),
                             }}
                           >
                             {msg.content}
@@ -274,11 +364,40 @@ const Index = () => {
               onKeyDown={handleKey}
               placeholder="Manda a pergunta..."
               rows={1}
-              className="w-full resize-none rounded-xl border border-border bg-muted/30 px-4 py-3 pr-11 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/40"
+              className="w-full resize-none rounded-xl border border-border bg-muted/30 pl-11 pr-20 py-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/40"
             />
-            <Button onClick={send} disabled={!input.trim() || isLoading} size="icon" className="absolute right-2 bottom-2 h-7 w-7 rounded-lg">
-              <Send className="h-3.5 w-3.5" />
-            </Button>
+            {/* Left: file attach */}
+            <div className="absolute left-2 bottom-2 flex items-center">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="h-7 w-7 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                title="Enviar arquivo"
+              >
+                <Paperclip className="h-4 w-4" />
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*,.pdf,.txt,.py,.js,.ts,.json,.csv,.md,.html,.css,.exe,.zip"
+                className="hidden"
+                onChange={handleFileUpload}
+              />
+            </div>
+            {/* Right: mic + send */}
+            <div className="absolute right-2 bottom-2 flex items-center gap-1">
+              <button
+                onClick={toggleListening}
+                className={`h-7 w-7 flex items-center justify-center rounded-lg transition-colors ${
+                  isListening ? "bg-destructive text-destructive-foreground animate-pulse" : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                }`}
+                title={isListening ? "Parar de ouvir" : "Ditar"}
+              >
+                {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+              </button>
+              <Button onClick={send} disabled={!input.trim() || isLoading} size="icon" className="h-7 w-7 rounded-lg">
+                <Send className="h-3.5 w-3.5" />
+              </Button>
+            </div>
           </div>
         </div>
 
