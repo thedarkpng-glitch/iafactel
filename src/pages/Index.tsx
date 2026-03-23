@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
-import { Send, Copy, Check, Plus, ThumbsUp, ThumbsDown, Settings, Shield, LogOut, Menu, Mic, MicOff, Paperclip, Image } from "lucide-react";
+import { Send, Copy, Check, Plus, ThumbsUp, ThumbsDown, Settings, Shield, LogOut, Menu, Mic, MicOff, Paperclip, LogIn, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
@@ -10,6 +10,7 @@ import SettingsPanel, { applyTheme } from "@/components/SettingsPanel";
 import AdminPanel from "@/components/AdminPanel";
 import ChatSidebar from "@/components/ChatSidebar";
 import factelAvatar from "@/assets/factel-avatar.png";
+import { useNavigate } from "react-router-dom";
 
 const SUGGESTIONS = [
   "Faz um script em Python",
@@ -67,11 +68,15 @@ const Index = () => {
   const [profile, setProfile] = useState<{ username: string | null; avatar_url: string | null }>({ username: null, avatar_url: null });
   const [botSettings, setBotSettings] = useState<{ bot_name: string; bot_avatar_url: string | null }>({ bot_name: "IA Factel", bot_avatar_url: null });
   const [isListening, setIsListening] = useState(false);
+  const [isVoiceMode, setIsVoiceMode] = useState(false);
+  const [voiceTranscript, setVoiceTranscript] = useState("");
   const [suggestions] = useState(() => getRandomSuggestions(4));
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
+  const previousInputRef = useRef("");
+  const navigate = useNavigate();
   const { toast } = useToast();
 
   const loadProfile = async () => {
@@ -113,18 +118,37 @@ const Index = () => {
   }, [input]);
 
   // Speech-to-text
-  const toggleListening = () => {
+  const stopRecognition = () => {
+    if (recognitionRef.current) recognitionRef.current.stop();
+    setIsListening(false);
+  };
+
+  const closeVoiceMode = (keepTranscript: boolean) => {
+    stopRecognition();
+    setIsVoiceMode(false);
+    setInput(keepTranscript ? voiceTranscript.trim() : previousInputRef.current);
+    if (!keepTranscript) setVoiceTranscript("");
+    setTimeout(() => inputRef.current?.focus(), 50);
+  };
+
+  const startListening = async () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
       toast({ title: "Navegador não suporta reconhecimento de voz", variant: "destructive" });
       return;
     }
 
-    if (isListening && recognitionRef.current) {
-      recognitionRef.current.stop();
-      setIsListening(false);
+    try {
+      const stream = await navigator.mediaDevices?.getUserMedia({ audio: true });
+      stream?.getTracks().forEach((track) => track.stop());
+    } catch {
+      toast({ title: "Microfone bloqueado", description: "Permita o acesso ao microfone para ditar.", variant: "destructive" });
       return;
     }
+
+    previousInputRef.current = input;
+    setVoiceTranscript(input);
+    setIsVoiceMode(true);
 
     const recognition = new SpeechRecognition();
     recognition.lang = "pt-BR";
@@ -137,7 +161,7 @@ const Index = () => {
       for (let i = 0; i < event.results.length; i++) {
         transcript += event.results[i][0].transcript;
       }
-      setInput(transcript);
+      setVoiceTranscript(transcript.trimStart());
     };
 
     recognition.onerror = () => { setIsListening(false); };
@@ -145,6 +169,14 @@ const Index = () => {
 
     recognition.start();
     setIsListening(true);
+  };
+
+  const toggleListening = () => {
+    if (isListening) {
+      stopRecognition();
+      return;
+    }
+    startListening();
   };
 
   // File upload handler
@@ -183,11 +215,15 @@ const Index = () => {
 
   const send = async () => {
     const t = input.trim();
-    if (!t || isLoading || !user) return;
+    if (!t || isLoading) return;
     
     if (isListening && recognitionRef.current) {
-      recognitionRef.current.stop();
-      setIsListening(false);
+      stopRecognition();
+    }
+
+    if (isVoiceMode) {
+      setIsVoiceMode(false);
+      setVoiceTranscript("");
     }
 
     const userMsg: Msg = { role: "user", content: t };
@@ -196,14 +232,14 @@ const Index = () => {
     setIsLoading(true);
 
     let convId = conversationId;
-    if (!convId) {
+    if (!convId && user) {
       const title = t.length > 40 ? t.slice(0, 40) + "..." : t;
       const { data } = await supabase.from("conversations").insert({ user_id: user.id, title }).select("id").single();
       if (data) { convId = data.id; setConversationId(data.id); }
       else { setIsLoading(false); return; }
     }
 
-    await saveMessage(convId, "user", t);
+    if (convId) await saveMessage(convId, "user", t);
 
     let buf = "";
     const update = (chunk: string) => {
@@ -238,40 +274,58 @@ const Index = () => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
   };
 
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) recognitionRef.current.stop();
+    };
+  }, []);
+
   const initials = profile.username ? profile.username.slice(0, 2).toUpperCase() : user?.email?.slice(0, 2).toUpperCase() || "?";
 
   return (
     <div className="flex h-screen">
-      <ChatSidebar
-        currentId={conversationId}
-        onSelect={loadConversation}
-        onNew={newChat}
-        open={sidebarOpen}
-        onToggle={() => setSidebarOpen(!sidebarOpen)}
-      />
+      {user && (
+        <ChatSidebar
+          currentId={conversationId}
+          onSelect={loadConversation}
+          onNew={newChat}
+          open={sidebarOpen}
+          onToggle={() => setSidebarOpen(!sidebarOpen)}
+        />
+      )}
 
       <div className="flex flex-col flex-1 min-w-0">
         {/* Header */}
         <div className="flex items-center justify-between px-4 h-11 border-b border-border shrink-0">
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(!sidebarOpen)} className="h-7 w-7 text-muted-foreground lg:hidden">
-              <Menu className="h-4 w-4" />
-            </Button>
+            {user && (
+              <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(!sidebarOpen)} className="h-7 w-7 text-muted-foreground lg:hidden">
+                <Menu className="h-4 w-4" />
+              </Button>
+            )}
             <span className="text-sm font-semibold">{botSettings.bot_name}</span>
           </div>
           <div className="flex items-center gap-1">
             <Button variant="ghost" size="sm" onClick={newChat} className="text-xs text-muted-foreground gap-1 h-7">
               <Plus className="h-3 w-3" /> Novo
             </Button>
-            <Button variant="ghost" size="icon" onClick={() => setShowSettings(true)} className="h-7 w-7 text-muted-foreground" title="Personalizar">
-              <Settings className="h-3.5 w-3.5" />
-            </Button>
-            <Button variant="ghost" size="icon" onClick={() => setShowAdmin(true)} className="h-7 w-7 text-muted-foreground" title="Admin">
-              <Shield className="h-3.5 w-3.5" />
-            </Button>
-            <Button variant="ghost" size="icon" onClick={signOut} className="h-7 w-7 text-muted-foreground" title="Sair">
-              <LogOut className="h-3.5 w-3.5" />
-            </Button>
+            {user ? (
+              <>
+                <Button variant="ghost" size="icon" onClick={() => setShowSettings(true)} className="h-7 w-7 text-muted-foreground" title="Personalizar">
+                  <Settings className="h-3.5 w-3.5" />
+                </Button>
+                <Button variant="ghost" size="icon" onClick={() => setShowAdmin(true)} className="h-7 w-7 text-muted-foreground" title="Admin">
+                  <Shield className="h-3.5 w-3.5" />
+                </Button>
+                <Button variant="ghost" size="icon" onClick={signOut} className="h-7 w-7 text-muted-foreground" title="Sair">
+                  <LogOut className="h-3.5 w-3.5" />
+                </Button>
+              </>
+            ) : (
+              <Button variant="ghost" size="sm" onClick={() => navigate("/auth")} className="text-xs text-muted-foreground gap-1 h-7">
+                <LogIn className="h-3.5 w-3.5" /> Entrar
+              </Button>
+            )}
           </div>
         </div>
 
@@ -284,6 +338,7 @@ const Index = () => {
                 <p className="text-base font-medium">
                   {profile.username ? `E aí, ${profile.username}!` : "No que posso ajudar?"}
                 </p>
+                {!user && <p className="text-xs text-muted-foreground">Você pode testar o chat e o microfone sem login. Faça login só se quiser salvar histórico.</p>}
                 <div className="grid grid-cols-2 gap-2 mt-4 w-full max-w-md">
                   {suggestions.map((s) => (
                     <button key={s} onClick={() => { setInput(s); inputRef.current?.focus(); }} className="px-3 py-2.5 rounded-xl border border-border text-xs text-muted-foreground hover:text-foreground hover:border-primary/30 transition-colors text-left">
@@ -357,52 +412,89 @@ const Index = () => {
         {/* Input */}
         <div className="shrink-0 border-t border-border p-3">
           <div className="max-w-2xl mx-auto relative">
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKey}
-              placeholder="Manda a pergunta..."
-              rows={1}
-              className="w-full resize-none rounded-xl border border-border bg-muted/30 pl-11 pr-20 py-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/40"
-            />
-            {/* Left: file attach */}
-            <div className="absolute left-2 bottom-2 flex items-center">
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="h-7 w-7 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                title="Enviar arquivo"
-              >
-                <Paperclip className="h-4 w-4" />
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*,.pdf,.txt,.py,.js,.ts,.json,.csv,.md,.html,.css,.exe,.zip"
-                className="hidden"
-                onChange={handleFileUpload}
-              />
-            </div>
-            {/* Right: mic + send */}
-            <div className="absolute right-2 bottom-2 flex items-center gap-1">
-              <button
-                onClick={toggleListening}
-                className={`h-7 w-7 flex items-center justify-center rounded-lg transition-colors ${
-                  isListening ? "bg-destructive text-destructive-foreground animate-pulse" : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                }`}
-                title={isListening ? "Parar de ouvir" : "Ditar"}
-              >
-                {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-              </button>
-              <Button onClick={send} disabled={!input.trim() || isLoading} size="icon" className="h-7 w-7 rounded-lg">
-                <Send className="h-3.5 w-3.5" />
-              </Button>
-            </div>
+            {isVoiceMode ? (
+              <div className="rounded-[1.75rem] border border-border bg-card px-3 py-2.5 shadow-lg">
+                <div className="voice-wave h-2 rounded-full bg-muted/40" />
+                <div className="mt-3 flex items-center gap-3">
+                  <button
+                    onClick={toggleListening}
+                    className={`flex h-9 w-9 items-center justify-center rounded-full border border-border transition-colors ${isListening ? "bg-primary text-primary-foreground voice-pulse" : "bg-muted text-muted-foreground hover:text-foreground"}`}
+                    title={isListening ? "Parar ditado" : "Continuar ditado"}
+                  >
+                    {isListening ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+                  </button>
+
+                  <div className="min-w-0 flex-1 text-sm text-foreground">
+                    <p className="truncate">{voiceTranscript || "Fale agora..."}</p>
+                    <p className="text-xs text-muted-foreground">{isListening ? "Ouvindo..." : "Ditado pausado"}</p>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => closeVoiceMode(false)}
+                      className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      title="Cancelar"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => closeVoiceMode(true)}
+                      className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground transition-opacity hover:opacity-90"
+                      title="Usar texto"
+                    >
+                      <Check className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <>
+                <textarea
+                  ref={inputRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKey}
+                  placeholder="Manda a pergunta..."
+                  rows={1}
+                  className="w-full resize-none rounded-xl border border-border bg-muted/30 pl-11 pr-20 py-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/40"
+                />
+                {/* Left: file attach */}
+                <div className="absolute left-2 bottom-2 flex items-center">
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="h-7 w-7 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                    title="Enviar arquivo"
+                  >
+                    <Paperclip className="h-4 w-4" />
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*,.pdf,.txt,.py,.js,.ts,.json,.csv,.md,.html,.css,.exe,.zip"
+                    className="hidden"
+                    onChange={handleFileUpload}
+                  />
+                </div>
+                {/* Right: mic + send */}
+                <div className="absolute right-2 bottom-2 flex items-center gap-1">
+                  <button
+                    onClick={toggleListening}
+                    className="h-8 w-8 flex items-center justify-center rounded-full border border-border bg-card text-muted-foreground transition-colors hover:text-foreground hover:bg-muted"
+                    title="Ditar"
+                  >
+                    <Mic className="h-4 w-4" />
+                  </button>
+                  <Button onClick={send} disabled={!input.trim() || isLoading} size="icon" className="h-7 w-7 rounded-lg">
+                    <Send className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
-        <SettingsPanel open={showSettings} onClose={() => { setShowSettings(false); loadProfile(); }} />
-        <AdminPanel open={showAdmin} onClose={() => setShowAdmin(false)} onBotUpdated={loadBotSettings} />
+        {user && <SettingsPanel open={showSettings} onClose={() => { setShowSettings(false); loadProfile(); }} />}
+        {user && <AdminPanel open={showAdmin} onClose={() => setShowAdmin(false)} onBotUpdated={loadBotSettings} />}
       </div>
     </div>
   );

@@ -6,6 +6,28 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+const imageIntentRegex = /(cria|crie|gera|gere|faz|faça|manda|envia|mostra|mostre|exibe|exibir).{0,40}(imagem|foto|ilustração|desenho|arte|wallpaper|capa)|(^|\s)(imagem|foto)(\s|$)/i;
+
+function shouldGenerateImage(messages: Array<{ role: string; content: string }>) {
+  const lastUserMessage = [...messages].reverse().find((message) => message.role === "user")?.content ?? "";
+  return imageIntentRegex.test(lastUserMessage) && !/analisa|analise|explica|descreve|descreva|resuma|pdf|arquivo/i.test(lastUserMessage);
+}
+
+function sseTextResponse(content: string) {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`));
+      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+      controller.close();
+    },
+  });
+
+  return new Response(stream, {
+    headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
+  });
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -13,6 +35,55 @@ serve(async (req) => {
     const { messages } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+
+    if (shouldGenerateImage(messages)) {
+      const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "google/gemini-3.1-flash-image-preview",
+          messages: [
+            {
+              role: "system",
+              content: "Você é a IA Factel. Quando o usuário pedir uma imagem, gere a imagem e responda com uma frase curtíssima em português.",
+            },
+            ...messages,
+          ],
+          modalities: ["image", "text"],
+        }),
+      });
+
+      if (!response.ok) {
+        if (response.status === 429) {
+          return new Response(JSON.stringify({ error: "Muitas requisições. Espera um pouco." }), {
+            status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        if (response.status === 402) {
+          return new Response(JSON.stringify({ error: "Créditos acabaram." }), {
+            status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        const imageError = await response.text();
+        console.error("AI image gateway error:", response.status, imageError);
+        return new Response(JSON.stringify({ error: "Erro ao gerar imagem" }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const data = await response.json();
+      const text = data.choices?.[0]?.message?.content || "Aqui está.";
+      const imageUrl = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+
+      if (!imageUrl) {
+        return sseTextResponse(text);
+      }
+
+      return sseTextResponse(`${text}\n\n![Imagem gerada](${imageUrl})`);
+    }
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
