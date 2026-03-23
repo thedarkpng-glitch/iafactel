@@ -85,6 +85,10 @@ const Auth = () => {
         <button onClick={() => setIsLogin(!isLogin)} className="text-xs text-muted-foreground hover:text-foreground w-full text-center transition-colors">
           {isLogin ? "Não tem conta? Criar uma" : "Já tem conta? Entrar"}
         </button>
+
+        <Button variant="ghost" onClick={() => window.location.assign("/")} className="w-full text-xs text-muted-foreground hover:text-foreground">
+          Continuar sem conta
+        </Button>
       </div>
     </div>
   );
