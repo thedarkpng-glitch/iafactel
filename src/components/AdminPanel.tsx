@@ -6,8 +6,6 @@ import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
-const ADMIN_PASSWORD = "Factel@Admin#2025!Secure";
-
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -23,8 +21,8 @@ type UserInfo = {
 
 const AdminPanel = ({ open, onClose, onBotUpdated }: Props) => {
   const { toast } = useToast();
-  const [authenticated, setAuthenticated] = useState(false);
-  const [password, setPassword] = useState("");
+  const [checking, setChecking] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [tab, setTab] = useState<"bot" | "users">("bot");
   const [botName, setBotName] = useState("IA Factel");
   const [botAvatarUrl, setBotAvatarUrl] = useState<string | null>(null);
@@ -32,8 +30,27 @@ const AdminPanel = ({ open, onClose, onBotUpdated }: Props) => {
   const [users, setUsers] = useState<UserInfo[]>([]);
 
   useEffect(() => {
-    if (open && authenticated) { loadBot(); loadUsers(); }
-  }, [open, authenticated]);
+    if (!open) return;
+    setChecking(true);
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setIsAdmin(false);
+        setChecking(false);
+        return;
+      }
+      const { data } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", user.id)
+        .eq("role", "admin")
+        .maybeSingle();
+      const admin = !!data;
+      setIsAdmin(admin);
+      setChecking(false);
+      if (admin) { loadBot(); loadUsers(); }
+    })();
+  }, [open]);
 
   const loadBot = async () => {
     const { data } = await supabase.from("bot_settings").select("*").limit(1).single();
@@ -46,15 +63,6 @@ const AdminPanel = ({ open, onClose, onBotUpdated }: Props) => {
   const loadUsers = async () => {
     const { data } = await supabase.from("profiles").select("user_id, username, avatar_url, created_at").order("created_at", { ascending: false });
     if (data) setUsers(data);
-  };
-
-  const tryAuth = () => {
-    if (password === ADMIN_PASSWORD) {
-      setAuthenticated(true);
-      setPassword("");
-    } else {
-      toast({ title: "Senha incorreta", variant: "destructive" });
-    }
   };
 
   const uploadBotAvatar = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -97,29 +105,22 @@ const AdminPanel = ({ open, onClose, onBotUpdated }: Props) => {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={() => { onClose(); setAuthenticated(false); }}>
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-card border border-border rounded-xl w-full max-w-md p-5 space-y-4 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold">🔒 Painel Admin</h2>
-          <button onClick={() => { onClose(); setAuthenticated(false); }} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
         </div>
 
-        {!authenticated ? (
-          <div className="space-y-3">
-            <p className="text-xs text-muted-foreground">Digite a senha de administrador</p>
-            <Input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && tryAuth()}
-              placeholder="Senha..."
-              className="h-9 text-sm"
-            />
-            <Button onClick={tryAuth} className="w-full h-9 text-sm">Entrar</Button>
+        {checking ? (
+          <p className="text-xs text-muted-foreground">Verificando permissões...</p>
+        ) : !isAdmin ? (
+          <div className="space-y-2">
+            <p className="text-sm">Você não tem permissão de administrador.</p>
+            <p className="text-xs text-muted-foreground">Peça a um admin para conceder a role <code>admin</code> na tabela <code>user_roles</code> para o seu usuário.</p>
           </div>
         ) : (
           <div className="space-y-4">
-            {/* Tabs */}
             <div className="flex border-b border-border">
               <button onClick={() => setTab("bot")} className={`flex-1 py-2 text-xs font-medium transition-colors ${tab === "bot" ? "text-foreground border-b-2 border-primary" : "text-muted-foreground"}`}>
                 🤖 Bot
@@ -131,7 +132,6 @@ const AdminPanel = ({ open, onClose, onBotUpdated }: Props) => {
 
             {tab === "bot" ? (
               <div className="space-y-4">
-                {/* Bot avatar */}
                 <div className="flex items-center gap-3">
                   <div className="relative">
                     <div className="h-14 w-14 rounded-full bg-muted overflow-hidden flex items-center justify-center">
