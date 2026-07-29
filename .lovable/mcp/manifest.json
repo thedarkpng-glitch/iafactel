@@ -1,0 +1,153 @@
+{
+  "version": 1,
+  "sdk_version": "0.25.0",
+  "path": "/functions/v1/mcp",
+  "auth": {
+    "type": "oauth",
+    "issuer": "https://ixjuomslhwjcpmjkcgjs.supabase.co/auth/v1",
+    "accepted_audiences": [
+      "authenticated"
+    ]
+  },
+  "mcp": {
+    "server": {
+      "name": "factel-the-all-knowing-ai",
+      "version": "0.1.0",
+      "title": "Factel: The All-Knowing AI"
+    },
+    "tools": [
+      {
+        "name": "list_conversations",
+        "title": "Listar conversas",
+        "description": "Lista as conversas do usuário autenticado na IA Factel.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20,
+              "description": "Quantidade máxima de conversas."
+            },
+            "include_archived": {
+              "type": "boolean",
+              "default": false,
+              "description": "Incluir conversas arquivadas."
+            }
+          },
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "get_conversation",
+        "title": "Ler conversa",
+        "description": "Retorna as mensagens de uma conversa do usuário autenticado.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "conversation_id": {
+              "type": "string",
+              "format": "uuid",
+              "description": "ID da conversa."
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "description": "Máximo de mensagens."
+            }
+          },
+          "required": [
+            "conversation_id"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "create_conversation",
+        "title": "Criar conversa",
+        "description": "Cria uma nova conversa para o usuário autenticado.",
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": false,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120,
+              "description": "Título da conversa."
+            }
+          },
+          "required": [
+            "title"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "add_message",
+        "title": "Adicionar mensagem",
+        "description": "Adiciona uma mensagem a uma conversa existente do usuário autenticado.",
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": false,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "conversation_id": {
+              "type": "string",
+              "format": "uuid",
+              "description": "ID da conversa."
+            },
+            "role": {
+              "type": "string",
+              "enum": [
+                "user",
+                "assistant"
+              ],
+              "description": "Autor da mensagem."
+            },
+            "content": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8000,
+              "description": "Conteúdo da mensagem."
+            }
+          },
+          "required": [
+            "conversation_id",
+            "role",
+            "content"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      }
+    ]
+  }
+}
