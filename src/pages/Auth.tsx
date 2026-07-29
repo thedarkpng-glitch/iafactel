@@ -15,6 +15,10 @@ const Auth = () => {
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
 
+  const nextParam = new URLSearchParams(window.location.search).get("next");
+  const safeNext = nextParam && nextParam.startsWith("/") && !nextParam.startsWith("//") ? nextParam : "/";
+  const returnUrl = `${window.location.origin}/auth?next=${encodeURIComponent(safeNext)}`;
+
   const handleEmail = async () => {
     if (!email || !password) return;
     setLoading(true);
@@ -26,7 +30,7 @@ const Auth = () => {
         const { error } = await supabase.auth.signUp({
           email,
           password,
-          options: { emailRedirectTo: window.location.origin },
+          options: { emailRedirectTo: returnUrl },
         });
         if (error) throw error;
         toast({ title: "Conta criada!", description: "Verifique seu email para confirmar." });
@@ -40,7 +44,7 @@ const Auth = () => {
 
   const handleGoogle = async () => {
     const { error } = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: window.location.origin,
+      redirect_uri: returnUrl,
     });
     if (error) {
       toast({ title: "Erro", description: String(error), variant: "destructive" });
@@ -86,7 +90,7 @@ const Auth = () => {
           {isLogin ? "Não tem conta? Criar uma" : "Já tem conta? Entrar"}
         </button>
 
-        <Button variant="ghost" onClick={() => window.location.assign("/")} className="w-full text-xs text-muted-foreground hover:text-foreground">
+        <Button variant="ghost" onClick={() => window.location.assign(safeNext)} className="w-full text-xs text-muted-foreground hover:text-foreground">
           Continuar sem conta
         </Button>
       </div>
