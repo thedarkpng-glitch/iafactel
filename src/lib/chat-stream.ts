@@ -4,6 +4,33 @@ export type Msg = { role: "user" | "assistant"; content: string };
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
 
+export type OllamaModel = { name: string; size: number; parameter_size?: string; family?: string };
+
+const MODEL_KEY = "ollama_model";
+export const getSelectedModel = () => localStorage.getItem(MODEL_KEY) || "";
+export const setSelectedModel = (m: string) => localStorage.setItem(MODEL_KEY, m);
+
+export async function listOllamaModels(): Promise<{ models: OllamaModel[] } | { error: string }> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) return { error: "Faça login para ver os modelos." };
+  try {
+    const resp = await fetch(CHAT_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+        apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+      },
+      body: JSON.stringify({ action: "models", messages: [{ role: "user", content: "-" }] }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) return { error: data.error || `Erro ${resp.status}` };
+    return { models: data.models ?? [] };
+  } catch {
+    return { error: "Falha de conexão com o servidor." };
+  }
+}
+
 export async function streamChat({
   messages,
   onDelta,
@@ -28,7 +55,7 @@ export async function streamChat({
       Authorization: `Bearer ${session.access_token}`,
       apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
     },
-    body: JSON.stringify({ messages }),
+    body: JSON.stringify({ messages, model: getSelectedModel() || undefined }),
   });
 
   if (!resp.ok) {
