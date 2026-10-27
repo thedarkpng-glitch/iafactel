@@ -9,6 +9,7 @@ import { streamChat, type Msg } from "@/lib/chat-stream";
 import SettingsPanel, { applyTheme } from "@/components/SettingsPanel";
 import AdminPanel from "@/components/AdminPanel";
 import ChatSidebar from "@/components/ChatSidebar";
+import ModelPicker from "@/components/ModelPicker";
 import factelAvatar from "@/assets/factel-avatar.png";
 import { useNavigate } from "react-router-dom";
 
@@ -304,6 +305,7 @@ const Index = () => {
               </Button>
             )}
             <span className="text-sm font-semibold">{botSettings.bot_name}</span>
+            {user && <ModelPicker />}
           </div>
           <div className="flex items-center gap-1">
             <Button variant="ghost" size="sm" onClick={newChat} className="text-xs text-muted-foreground gap-1 h-7">
